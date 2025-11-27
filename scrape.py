@@ -1,63 +1,68 @@
-from playwright.sync_api import sync_playwright
+import requests
 import pandas as pd
 import sys
 
+# The API endpoint identified from the network traffic
+API_ENDPOINT = "https://rhmzrs.com/data/feeds/EkoPodaci.json"
+
 def run():
-    with sync_playwright() as p:
-        print("Launching browser...")
-        browser = p.chromium.launch(headless=True)
-        page = browser.new_page()
-
-        url = "https://rhmzrs.com/kontrola-kvaliteta-vazduha"
-        print(f"Going to {url}...")
-        page.goto(url)
-
-        try:
-            print("Waiting for data tables to load (15s timeout)...")
-            page.wait_for_selector("table tbody tr td", timeout=15000) 
-        except Exception:
-            print("Warning: Table data did not fully load, proceeding to parse available HTML.")
-
-        html = page.content()
-        browser.close()
-
-        print("Parsing HTML with pandas...")
-        try:
-            # Read without headers, to see all raw cells
-            dfs = pd.read_html(html, header=None)
-            print(f"Found {len(dfs)} tables on the page.")
-        except ValueError:
-            print("No tables found in the HTML.")
-            sys.exit(1)
-
-        print("\n--- FINAL DEBUG LOG: 3-COLUMN TABLE CONTENT ---")
+    print(f"Attempting to fetch data directly from API: {API_ENDPOINT}")
+    
+    try:
+        # 1. Fetch data directly via HTTP request
+        response = requests.get(API_ENDPOINT, timeout=30)
+        response.raise_for_status() # Raise an exception for bad status codes
         
-        # Iterate through all found tables and check column count
-        for i, df in enumerate(dfs):
-            rows = len(df)
-            cols = len(df.columns)
-            
-            if cols == 3 and rows >= 10: # Focus on 3-column tables with meaningful size
-                print(f"\nTABLE INDEX {i}: {rows} rows, {cols} columns.")
-                
-                # Print the content of the crucial second column (index 1), which should hold pollutant names
-                print(f"--- COLUMN 1 (INDEX 1) CONTENT DUMP ---")
-                
-                # Print the unique values or the first 20 rows of the column content
-                unique_values = df.iloc[:, 1].astype(str).unique()
-                if len(unique_values) < 50:
-                    print("Unique values:")
-                    print(unique_values)
-                else:
-                    print("First 20 rows:")
-                    print(df.iloc[:20, 1].to_string(index=False))
-                    
-                print("------------------------------------------")
+        data = response.json()
         
-        print("----------------------------------------------")
+    except requests.exceptions.RequestException as e:
+        print(f"\n❌ FATAL ERROR: Direct API call failed (Network/Timeout issue).")
+        print(f"Error: {e}")
+        sys.exit(1)
         
-        # Exit successfully to ensure the log is captured
-        sys.exit(0)
+    # 2. Extract raw rows from the JSON (data is usually a list or under a 'data' key)
+    if isinstance(data, dict) and 'data' in data:
+        raw_rows = data['data']
+    elif isinstance(data, list):
+        raw_rows = data
+    else:
+        print("\n❌ FATAL ERROR: JSON structure was unexpected.")
+        sys.exit(1)
+        
+    if not raw_rows or len(raw_rows) < 5:
+        print(f"\n❌ FATAL ERROR: Successfully fetched JSON, but it contains too few rows ({len(raw_rows)}).")
+        sys.exit(1)
+
+    raw_df = pd.DataFrame(raw_rows)
+    print(f"Successfully fetched {len(raw_df)} rows directly from the API.")
+
+    # 3. Apply pivot transformation (assuming API data structure matches the 3-column narrow format)
+    if len(raw_df.columns) == 3:
+        raw_df.columns = [0, 1, 2]
+        raw_df = raw_df.dropna(subset=[0, 1])
+
+        # Pivot to the desired 12-column wide format
+        final_df = raw_df.pivot_table(
+            index=[0],
+            columns=[1],
+            values=[2],
+            aggfunc='first'
+        ).reset_index()
+
+        final_df.columns = [col[1] if isinstance(col, tuple) else col for col in final_df.columns.values]
+        final_df = final_df.rename(columns={0: 'Станица/Вријеме'})
+        
+    else:
+        # If the API returns the data already in wide format, save it directly
+        final_df = raw_df
+        final_df.columns = ['Станица/Вријеме', 'O3', 'CO', 'SО2', 'NO', 'NO2', 'NOx', 'PM10', 'PM25', 'H2S', 'C6H6']
+        print("API data was pre-pivoted (wide format).")
+
+    # Final Save
+    output_file = "air_quality_data.csv"
+    final_df.to_csv(output_file, index=False, encoding='utf-8-sig') 
+    print(f"✅ ULTIMATE SUCCESS: Saved {len(final_df)} rows to {output_file} via direct API call.")
+    print(final_df.head())
 
 
 if __name__ == "__main__":
