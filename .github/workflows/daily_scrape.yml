@@ -4,7 +4,7 @@ on:
   schedule:
     # Runs at 08:00 UTC every day. Change this if you want different times.
     # To run every hour, use: '0 * * * *'
-    - cron: '20 * * * *'
+    - cron: '*/30 * * * *'
   workflow_dispatch: # Allows you to click a button to run it manually for testing
 
 permissions:
