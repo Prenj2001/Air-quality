@@ -31,8 +31,7 @@ def run():
             print("No tables found in the HTML.")
             sys.exit(1)
 
-        # --- FINAL SOLUTION: Dynamically search for the largest 3-column table ---
-        # This is the only way to reliably find the source data as its index shifts.
+        # --- DYNAMIC SEARCH: Find the largest 3-column table ---
         max_rows = 0
         RAW_DATA_INDEX = -1
         
@@ -52,11 +51,14 @@ def run():
         # Data Transformation (Pivot)
         if not raw_df.empty:
             
-            # 1. Use numeric indices (0, 1, 2) for columns
+            # 1. CRITICAL CLEANUP: Drop the first row, as it contains the title/header contamination
+            raw_df = raw_df.iloc[1:].reset_index(drop=True) 
+
+            # 2. Use numeric indices (0, 1, 2) for columns
             raw_df.columns = [0, 1, 2] 
             raw_df = raw_df.dropna(subset=[0, 1])
             
-            # 2. Pivot the table: Group the rows by Station (Col 0)
+            # 3. Pivot the table: Group the rows by Station (Col 0)
             final_df = raw_df.pivot_table(
                 index=[0],       # Column 0: Station/Time identifier (The final rows)
                 columns=[1],     # Column 1: Parameter Name (The final columns: PM10, O3, etc.)
@@ -64,11 +66,11 @@ def run():
                 aggfunc='first'
             ).reset_index()
             
-            # 3. Fix MultiIndex and rename the identifier column
+            # 4. Fix MultiIndex and rename the identifier column
             final_df.columns = [col[1] if isinstance(col, tuple) else col for col in final_df.columns.values]
             final_df = final_df.rename(columns={0: 'Станица/Вријеме'}) 
             
-            print(f"Successfully pivoted {len(raw_df)} rows into {len(final_df)} wide rows.")
+            print(f"Successfully pivoted cleaned data into {len(final_df)} wide rows.")
             
         else:
             print("ERROR: Raw data table was found but was empty.")
