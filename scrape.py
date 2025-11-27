@@ -35,7 +35,7 @@ def run():
             print("No tables found in the HTML.")
             sys.exit(1)
 
-        # FINAL SOLUTION: Target the 3-column table (Index 3) for the raw data
+        # Target the 3-column table (Index 3) for the raw data
         TABLE_INDEX = 3
         
         if len(dfs) > TABLE_INDEX:
@@ -45,22 +45,28 @@ def run():
             print(f"Error: Targeted index {TABLE_INDEX} not found in the {len(dfs)} tables.")
             sys.exit(1)
 
-        # Data Transformation (Pivot)
+        # Data Transformation (Robust Pivot using numeric indices)
         if len(raw_df.columns) == 3 and not raw_df.empty:
             
-            # 1. Rename columns based on likely structure (Station, Parameter, Value)
-            raw_df.columns = ['Station', 'Parameter', 'Value']
+            # Use numeric indices (0, 1, 2) for columns to avoid naming/encoding issues
+            raw_df.columns = [0, 1, 2] 
             
-            # 2. Drop any rows with missing values (e.g., footers, empty cells)
-            raw_df = raw_df.dropna(subset=['Station', 'Parameter'])
+            # Drop any rows with missing values
+            raw_df = raw_df.dropna(subset=[0, 1])
             
-            # 3. Pivot the table: Use 'Station' as rows, 'Parameter' as columns, and 'Value' as data
+            # Pivot the table: Use column 0 as rows, column 1 as headers, and column 2 as data
             final_df = raw_df.pivot_table(
-                index='Station', 
-                columns='Parameter', 
-                values='Value', 
+                index=[0],       # Column 0 is the unique identifier (Station/Time)
+                columns=[1],     # Column 1 is the Parameter Name (PM10, O3, etc.)
+                values=[2],      # Column 2 is the Value
                 aggfunc='first'
             ).reset_index()
+            
+            # Fix MultiIndex resulting from pivot operation
+            final_df.columns = [col[1] if isinstance(col, tuple) else col for col in final_df.columns.values]
+            
+            # Final Step: Rename the primary identifier column (which is named '0')
+            final_df = final_df.rename(columns={0: 'Станица/Вријеме'}) 
             
             print(f"Successfully pivoted data to {len(final_df)} wide rows.")
             
