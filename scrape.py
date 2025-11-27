@@ -12,15 +12,14 @@ def run():
         print(f"Going to {url}...")
         page.goto(url)
 
-        # CRITICAL FIX: Wait for the actual DATA rows to appear, not just the table
-        # We wait for a table cell (td) that is inside a table body
+        # CRITICAL FIX 1: Increase timeout and wait for data rows
         try:
-            print("Waiting for table data to load...")
-            page.wait_for_selector("table tbody tr td", timeout=20000)
+            print("Waiting for table data to load (45s timeout)...")
+            page.wait_for_selector("table tbody tr td", timeout=45000) 
         except Exception as e:
-            print(f"Error: Table data did not load within timeout. {e}")
-            # Capture screenshot for debugging (viewable in GitHub Actions artifacts if configured)
-            page.screenshot(path="debug_error.png")
+            # This is the block that triggers Exit Code 1 if a timeout occurs
+            print(f"FATAL ERROR: Table data did not load within timeout. {e}")
+            page.screenshot(path="debug_error.png") # Screenshot saved for manual check
             browser.close()
             sys.exit(1)
 
@@ -37,35 +36,29 @@ def run():
             print("No tables found in the HTML.")
             sys.exit(1)
 
-        # Logic to find the CORRECT table
-        # We look for the table that contains the 'PM10' column
+        # CRITICAL FIX 2: Simplified Logic to find the correct table
+        # We assume the data table is the first one found that has more than 5 columns.
         target_df = None
         for i, df in enumerate(dfs):
-           # Logic to find the CORRECT table
-        # We assume the main data table is the first one found that has more than 5 columns and more than 1 row.
-        target_df = None
-        for i, df in enumerate(dfs):
-            # Check for sufficient columns (e.g., Time, Station, O3, CO, etc., which is > 5)
-            # and ensure it has data rows (len(df) > 1)
+            # The data table has at least 10 columns (Time, Station, O3, CO, SO2, etc.)
             if len(df.columns) > 5 and len(df) > 1:
                 print(f"Assuming table {i} is the target data table (has {len(df.columns)} columns).")
                 target_df = df
                 break
         
+        # Save the result
         if target_df is not None and not target_df.empty:
             # Clean up: Drop rows that are purely empty
             target_df = target_df.dropna(how='all')
             
             output_file = "air_quality_data.csv"
-            target_df.to_csv(output_file, index=False, encoding='utf-8-sig')
-            print(f"SUCCESS: Saved data to {output_file}")
-            print(target_df.head()) # Print first few rows to the log
+            target_df.to_csv(output_file, index=False, encoding='utf-8-sig') 
+            print(f"SUCCESS: Saved data ({len(target_df)} rows) to {output_file}")
+            print(target_df.head())
         else:
-            print("ERROR: Found tables, but none contained 'PM10' or they were empty.")
-            # Print the first table just to see what we got
-            if dfs:
-                print("First table content preview:")
-                print(dfs[0].head())
+            print("ERROR: Found tables, but none matched the criteria (e.g., were empty or too small).")
+            # This will result in a successful run but no commit, which is the correct outcome for empty data.
+
 
 if __name__ == "__main__":
     run()
