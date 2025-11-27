@@ -12,7 +12,7 @@ def run():
         print(f"Going to {url}...")
         page.goto(url)
 
-        # FIX: Increased timeout and wait for data rows
+        # Increased timeout and wait for data rows
         try:
             print("Waiting for table data to load (45s timeout)...")
             page.wait_for_selector("table tbody tr td", timeout=45000) 
@@ -35,31 +35,48 @@ def run():
             print("No tables found in the HTML.")
             sys.exit(1)
 
-        # FINAL SOLUTION: Search dynamically for the table that matches the known structure (12 columns)
-        target_df = None
-        TARGET_COLUMNS = 12
+        # FINAL SOLUTION: Target the 3-column table (Index 3) for the raw data
+        TABLE_INDEX = 3
         
-        for i, df in enumerate(dfs):
-            # We look for 12 columns AND actual data rows (> 1 row total)
-            if len(df.columns) == TARGET_COLUMNS and len(df) > 1:
-                print(f"SUCCESS: Found data table at index {i}. It has {len(df)} rows.")
-                target_df = df
-                break
-            # Log skipped tables for debugging
-            print(f"Skipping table {i}: {len(df)} rows, {len(df.columns)} columns.")
+        if len(dfs) > TABLE_INDEX:
+            raw_df = dfs[TABLE_INDEX]
+            print(f"Targeted raw data table at index {TABLE_INDEX}. Found {len(raw_df)} rows.")
+        else:
+            print(f"Error: Targeted index {TABLE_INDEX} not found in the {len(dfs)} tables.")
+            sys.exit(1)
+
+        # Data Transformation (Pivot)
+        if len(raw_df.columns) == 3 and not raw_df.empty:
+            
+            # 1. Rename columns based on likely structure (Station, Parameter, Value)
+            raw_df.columns = ['Station', 'Parameter', 'Value']
+            
+            # 2. Drop any rows with missing values (e.g., footers, empty cells)
+            raw_df = raw_df.dropna(subset=['Station', 'Parameter'])
+            
+            # 3. Pivot the table: Use 'Station' as rows, 'Parameter' as columns, and 'Value' as data
+            final_df = raw_df.pivot_table(
+                index='Station', 
+                columns='Parameter', 
+                values='Value', 
+                aggfunc='first'
+            ).reset_index()
+            
+            print(f"Successfully pivoted data to {len(final_df)} wide rows.")
+            
+        else:
+            print("ERROR: Table 3 was not the expected 3-column raw data format.")
+            sys.exit(1)
 
         # Save the result
-        if target_df is not None and not target_df.empty and len(target_df) > 1:
-            # Clean up: Drop rows that are purely empty
-            target_df = target_df.dropna(how='all')
-            
+        if not final_df.empty:
             output_file = "air_quality_data.csv"
-            target_df.to_csv(output_file, index=False, encoding='utf-8-sig') 
-            print(f"✅ FINAL SUCCESS: Saved data ({len(target_df)} data rows) to {output_file}")
-            print(target_df.head())
+            final_df.to_csv(output_file, index=False, encoding='utf-8-sig') 
+            print(f"✅ FINAL SUCCESS: Saved data ({len(final_df)} wide rows) to {output_file}")
+            print(final_df.head())
         else:
-            print("FATAL ERROR: Could not find the correct 12-column table with data.")
-            sys.exit(1) # Fail the workflow if data is missing
+            print("FATAL ERROR: The final pivoted table was empty.")
+            sys.exit(1)
 
 
 if __name__ == "__main__":
