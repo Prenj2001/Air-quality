@@ -32,22 +32,35 @@ def run():
             # This extracts ALL tables from the page into a list
             dfs = pd.read_html(html)
             print(f"Found {len(dfs)} tables on the page. SAVING ALL FOR DEBUGGING.")
+        except ValueError:print("Parsing HTML with pandas...")
+        try:
+            # This extracts ALL tables from the page into a list
+            dfs = pd.read_html(html)
+            print(f"Found {len(dfs)} tables on the page. PRINTING CONTENT TO LOG FOR INSPECTION.")
         except ValueError:
             print("No tables found in the HTML.")
             sys.exit(1)
 
-        # DEBUGGING: Loop through ALL found tables and save them if they aren't empty
-        saved_count = 0
+        # DEBUGGING: Print the content of all found tables to the log
         for i, df in enumerate(dfs):
-            # We only save tables that have at least 2 rows (header + 1 data row)
-            if not df.empty and len(df) > 1:
-                # Create a descriptive filename: debug_table_INDEX_columnCOUNT.csv
-                output_file = f"debug_table_{i}_cols_{len(df.columns)}.csv"
-                df.to_csv(output_file, index=False, encoding='utf-8-sig')
-                print(f"✅ Saved potential data table {i} ({len(df.columns)} columns) as {output_file}")
-                saved_count += 1
+            print(f"\n--- DEBUG: Table {i} ---")
+            print(f"Dimensions: {len(df)} rows, {len(df.columns)} columns")
+            
+            if df.empty:
+                print("Content: EMPTY DATAFRAME")
+            elif len(df) == 1:
+                print("Content: Only HEADER ROW found.")
+                # Use to_string() to avoid truncation
+                print(df.to_string())
             else:
-                print(f"➖ Skipped table {i} as it was empty or too small.")
+                print("Content: Found potential data.")
+                print(df.head(10).to_string()) # Print up to 10 rows
+        
+        # We exit successfully here, ensuring the log is captured.
+        print("\n--- END OF SCRAPER RUN ---")
+
+if __name__ == "__main__":
+    run()
         
         # --- Start of the final reporting block ---
         if saved_count > 0:
