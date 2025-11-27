@@ -1,6 +1,34 @@
 from playwright.sync_api import sync_playwright
 import pandas as pd
 import sys
+import json
+
+# Placeholder for the data captured from the network
+RAW_DATA_CONTAINER = []
+
+def handle_response(response):
+    """Callback function to check network responses for the data endpoint."""
+    global RAW_DATA_CONTAINER
+    
+    # Check if the URL contains keywords typical of data feeds,
+    # or the DataTable server-side processing URL.
+    if "/data" in response.url.lower() or "/json" in response.url.lower() or "kontrola" in response.url.lower():
+        try:
+            # Read the JSON response body
+            data = response.json()
+            # If the data looks like a large list or dictionary, save it.
+            if isinstance(data, dict) and 'data' in data: # Common DataTables structure
+                if len(data['data']) > 5:
+                    RAW_DATA_CONTAINER.append(data['data'])
+                    print(f"Captured RAW JSON data from: {response.url}")
+            elif isinstance(data, list) and len(data) > 5:
+                RAW_DATA_CONTAINER.append(data)
+                print(f"Captured RAW JSON data from: {response.url}")
+                
+        except Exception:
+            # Ignore non-JSON responses
+            pass
+
 
 def run():
     with sync_playwright() as p:
@@ -8,57 +36,45 @@ def run():
         browser = p.chromium.launch(headless=True)
         page = browser.new_page()
 
+        # 1. Attach the response handler
+        page.on("response", handle_response)
+        
         url = "https://rhmzrs.com/kontrola-kvaliteta-vazduha"
-        print(f"Going to {url}...")
+        print(f"Going to {url} and monitoring network traffic...")
+        
+        # 2. Wait for the page to navigate and the data transfer to complete
         page.goto(url)
-
-        # FINAL, DEFINITIVE WAIT FIX: Wait for the 8th <tr> element (Header + 7 data rows)
-        # using the table's unique ID (#example).
-        try:
-            print("Waiting for the 7 data rows to load into #example (60s timeout)...")
-            # Wait for the 8th row of the table with id="example" to appear.
-            page.wait_for_selector("#example > tbody > tr:nth-child(8)", timeout=60000) 
-        except Exception as e:
-            print(f"FATAL ERROR: DataTables did not populate the table within timeout. {e}")
-            page.screenshot(path="debug_error.png")
-            browser.close()
-            sys.exit(1)
-
-        # Get the full page HTML
-        html = page.content()
+        page.wait_for_timeout(10000) # Give 10 seconds for all AJAX calls to complete
+        
         browser.close()
 
-        print("Parsing HTML with pandas...")
-        try:
-            dfs = pd.read_html(html)
-            print(f"Found {len(dfs)} tables on the page.")
-        except ValueError:
-            print("No tables found in the HTML.")
+        if not RAW_DATA_CONTAINER:
+            print("\n❌ FATAL ERROR: No data feed was intercepted.")
+            print("Please inspect your browser's Network tab for the exact API URL and provide it.")
             sys.exit(1)
 
-        # FINAL TARGET: Table 0 (the 12-column DataTables output)
-        TABLE_INDEX = 0 
+        # Assuming the captured data is the raw list of rows
+        raw_rows = RAW_DATA_CONTAINER[0]
+
+        # 3. Load the raw data into Pandas
+        # The data should already be in the 12-column format (or close to it)
+        final_df = pd.DataFrame(raw_rows)
+        print(f"\nSuccessfully loaded {len(final_df)} rows from JSON response.")
+
+        # 4. Final Cleanup and Save
+        # Assuming the JSON returns the columns in the correct order, we just need to rename them.
+        final_df.columns = [
+            'Вријеме', 'Станица', 'O3', 'CO', 'SО2', 'NO', 
+            'NO2', 'NOx', 'PM10', 'PM25', 'H2S', 'C6H6'
+        ]
         
-        if len(dfs) > TABLE_INDEX:
-            final_df = dfs[TABLE_INDEX]
-            print(f"Targeted DataTables output at index {TABLE_INDEX}. Found {len(final_df)} rows.")
-        else:
-            print(f"Error: Targeted index {TABLE_INDEX} not found in the {len(dfs)} tables.")
-            sys.exit(1)
-
-        # Save the result
-        if len(final_df.columns) == 12 and len(final_df) >= 7:
-            
-            # Drop rows that are purely empty
-            final_df = final_df.dropna(how='all')
-            
-            output_file = "air_quality_data.csv"
-            final_df.to_csv(output_file, index=False, encoding='utf-8-sig') 
-            print(f"✅ ULTIMATE SUCCESS: Saved {len(final_df)} rows of 12-column data to {output_file}")
-            print(final_df.head())
-        else:
-            print(f"ERROR: Table 0 was found, but had the wrong size ({len(final_df)} rows) or columns ({len(final_df.columns)}).")
-            sys.exit(1)
+        # Remove any extra columns if the JSON returned more than 12
+        final_df = final_df.iloc[:, :12]
+        
+        output_file = "air_quality_data.csv"
+        final_df.to_csv(output_file, index=False, encoding='utf-8-sig') 
+        print(f"✅ ULTIMATE SUCCESS: Saved {len(final_df)} rows of 12-column data to {output_file}")
+        print(final_df.head())
 
 
 if __name__ == "__main__":
