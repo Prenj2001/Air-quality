@@ -1,0 +1,43 @@
+name: Daily Air Quality Scrape
+
+on:
+  schedule:
+    # Runs at 08:00 UTC every day. Change this if you want different times.
+    # To run every hour, use: '0 * * * *'
+    - cron: '0 8 * * *'
+  workflow_dispatch: # Allows you to click a button to run it manually for testing
+
+permissions:
+  contents: write
+
+jobs:
+  scrape-and-commit:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.9'
+
+      - name: Install dependencies
+        run: |
+          pip install pandas playwright lxml
+          playwright install chromium
+
+      - name: Run Scraper
+        run: python scrape.py
+
+      - name: Commit and Push Data
+        run: |
+          git config --global user.name "GitHub Action Scraper"
+          git config --global user.email "action@github.com"
+          
+          # Check if data changed
+          git add air_quality_data.csv
+          timestamp=$(date -u)
+          git commit -m "Auto-update air quality data: ${timestamp}" || exit 0
+          git push
