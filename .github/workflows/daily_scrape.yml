@@ -31,13 +31,21 @@ jobs:
       - name: Run Scraper
         run: python scrape.py
 
-      - name: Commit and Push Data
-        run: |
-          git config --global user.name "GitHub Action Scraper"
-          git config --global user.email "action@github.com"
+      # Ensure you still have fetch-depth: 0 in your checkout step!
+
+      - name: Run Scraper
+        run: python scrape.py
+
+      # 🚨 DELETE the old 'Commit and Push Data' step and REPLACE with this action 🚨
+      - name: Commit and Push Data (Using Auto-Commit Action)
+        uses: stefanzweifel/git-auto-commit-action@v5
+        with:
+          # Which files to commit. This targets only your CSV file.
+          file_pattern: air_quality_data.csv
+          # Set the commit message
+          commit_message: "Auto-update air quality data"
+          # Optional: Use a specific bot email for cleaner history
+          commit_user_name: GitHub Action Scraper
+          commit_user_email: action@github.com
           
-          # Check if data changed
-          git add air_quality_data.csv
-          timestamp=$(date -u)
-          git commit -m "Auto-update air quality data: ${timestamp}" || exit 0
-          git push
+          # This action handles the authentication and push safely.
