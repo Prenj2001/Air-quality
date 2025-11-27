@@ -36,25 +36,37 @@ def run():
             print("No tables found in the HTML.")
             sys.exit(1)
 
-        # CRITICAL FIX 2: Simplified Logic to find the correct table
-        # We assume the data table is the first one found that has more than 5 columns.
-        target_df = None
+        # Get the full page HTML
+        html = page.content()
+        browser.close()
+
+        print("Parsing HTML with pandas...")
+        try:
+            # This extracts ALL tables from the page into a list
+            dfs = pd.read_html(html)
+            print(f"Found {len(dfs)} tables on the page. SAVING ALL FOR DEBUGGING.")
+        except ValueError:
+            print("No tables found in the HTML.")
+            sys.exit(1)
+
+        # DEBUGGING: Loop through ALL found tables and save them if they aren't empty
+        saved_count = 0
         for i, df in enumerate(dfs):
-            # The data table has at least 10 columns (Time, Station, O3, CO, SO2, etc.)
-            if len(df.columns) > 5 and len(df) > 1:
-                print(f"Assuming table {i} is the target data table (has {len(df.columns)} columns).")
-                target_df = df
-                break
+            # We only save tables that have at least 2 rows (header + 1 data row)
+            if not df.empty and len(df) > 1:
+                # Create a descriptive filename: debug_table_INDEX_columnCOUNT.csv
+                output_file = f"debug_table_{i}_cols_{len(df.columns)}.csv"
+                df.to_csv(output_file, index=False, encoding='utf-8-sig')
+                print(f"✅ Saved potential data table {i} ({len(df.columns)} columns) as {output_file}")
+                saved_count += 1
+            else:
+                print(f"➖ Skipped table {i} as it was empty or too small.")
         
-        # Save the result
-        if target_df is not None and not target_df.empty:
-            # Clean up: Drop rows that are purely empty
-            target_df = target_df.dropna(how='all')
-            
-            output_file = "air_quality_data.csv"
-            target_df.to_csv(output_file, index=False, encoding='utf-8-sig') 
-            print(f"SUCCESS: Saved data ({len(target_df)} rows) to {output_file}")
-            print(target_df.head())
+        if saved_count > 0:
+            print("---")
+            print(f"SUCCESS: Saved {saved_count} debug files. Please check your repository for the CSV containing the air quality data.")
+        else:
+            print("FAILURE: No non-empty tables were found for debugging.")
         else:
             print("ERROR: Found tables, but none matched the criteria (e.g., were empty or too small).")
             # This will result in a successful run but no commit, which is the correct outcome for empty data.
