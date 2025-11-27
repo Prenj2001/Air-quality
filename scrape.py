@@ -31,19 +31,6 @@ def run():
         try:
             # This extracts ALL tables from the page into a list
             dfs = pd.read_html(html)
-            print(f"Found {len(dfs)} tables on the page.")
-        except ValueError:
-            print("No tables found in the HTML.")
-            sys.exit(1)
-
-        # Get the full page HTML
-        html = page.content()
-        browser.close()
-
-        print("Parsing HTML with pandas...")
-        try:
-            # This extracts ALL tables from the page into a list
-            dfs = pd.read_html(html)
             print(f"Found {len(dfs)} tables on the page. SAVING ALL FOR DEBUGGING.")
         except ValueError:
             print("No tables found in the HTML.")
@@ -62,15 +49,9 @@ def run():
             else:
                 print(f"➖ Skipped table {i} as it was empty or too small.")
         
+        # --- Start of the final reporting block ---
         if saved_count > 0:
             print("---")
             print(f"SUCCESS: Saved {saved_count} debug files. Please check your repository for the CSV containing the air quality data.")
         else:
             print("FAILURE: No non-empty tables were found for debugging.")
-        else:
-            print("ERROR: Found tables, but none matched the criteria (e.g., were empty or too small).")
-            # This will result in a successful run but no commit, which is the correct outcome for empty data.
-
-
-if __name__ == "__main__":
-    run()
