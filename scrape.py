@@ -24,50 +24,69 @@ def run():
 
         print("Parsing HTML with pandas...")
         try:
-            # Let Pandas infer headers to find the pollutant names
-            dfs = pd.read_html(html)
+            # Read without headers, forcing column indices 0, 1, 2
+            dfs = pd.read_html(html, header=None)
             print(f"Found {len(dfs)} tables on the page.")
         except ValueError:
             print("No tables found in the HTML.")
             sys.exit(1)
 
-        # --- FINAL SOLUTION: Search for the table containing pollutant identifiers ---
+        # --- FINAL SOLUTION: Search data cells for pollutant names and large size ---
         RAW_DATA_INDEX = -1
         
         for i, df in enumerate(dfs):
-            # Convert columns to string and check if pollutants exist
-            header_str = " ".join(df.columns.astype(str)).upper()
+            rows = len(df)
+            cols = len(df.columns)
+
+            # Rule 1: Must be the 3-column raw data format and large size
+            if cols != 3 or rows < 45:
+                continue
             
-            # Check for key pollutant names known to be in the raw data headers
-            if ("PM10" in header_str or "SO2" in header_str or "NOX" in header_str) and len(df.columns) == 3 and len(df) >= 45:
-                RAW_DATA_INDEX = i
-                break
+            # Rule 2 (THE FINAL CHECK): The second column (index 1) must contain pollutant codes (PM10, O3, NOX).
+            try:
+                # Check if the column contains at least one known pollutant code string
+                col_content = df.iloc[:, 1].astype(str)
+                
+                if col_content.str.contains('PM10|SO2|NOX|O3|CO|C6H6').any():
+                    RAW_DATA_INDEX = i
+                    break # Found the table!
+                        
+            except Exception:
+                # Ignore tables where this check fails
+                continue
         
         if RAW_DATA_INDEX == -1:
-            print("FATAL ERROR: Could not find the raw data table containing pollutant names (PM10/SO2) in the headers.")
+            print("FATAL ERROR: Could not find the 3-column raw data table by checking for pollutant codes in data cells.")
             sys.exit(1)
 
         raw_df = dfs[RAW_DATA_INDEX]
-        print(f"Targeted raw data table found at Index {RAW_DATA_INDEX} (Pollutant-ID Source). Found {len(raw_df)} rows.")
+        print(f"Targeted raw data table found at Index {RAW_DATA_INDEX} (Pollutant Data Source). Found {len(raw_df)} rows.")
 
         # Data Transformation (Pivot)
         if not raw_df.empty:
             
-            # 1. Reset columns to numeric indices, assuming Pandas read the header row correctly
-            # The header row contains the pollutant names, which is correct for the pivot.
+            # 1. CRITICAL CLEANUP: Drop the first 3 rows to eliminate headers/titles/garbage
+            if len(raw_df) > 3:
+                raw_df = raw_df.iloc[3:].reset_index(drop=True) 
             
-            # 2. Pivot the table: Group by the first column (Station/Time)
+            # 2. Assign numeric indices (0, 1, 2)
+            raw_df.columns = [0, 1, 2] 
+            raw_df = raw_df.dropna(subset=[0, 1])
+            
+            # 3. Pivot the table to the final 12-column format
             final_df = raw_df.pivot_table(
-                index=raw_df.columns[0],       # Station/Time identifier
-                columns=raw_df.columns[1],     # Parameter Name (New column headers)
-                values=raw_df.columns[2],      # Value 
+                index=[0],       # Column 0: Station/Time identifier
+                columns=[1],     # Column 1: Parameter Name (New column headers)
+                values=[2],      # Column 2: Value 
                 aggfunc='first'
             ).reset_index()
             
-            # 3. Rename the first column to match the expected output
-            final_df = final_df.rename(columns={final_df.columns[0]: 'Станица/Вријеме'}) 
+            # 4. Final Cleanup and Rename
+            final_column_names = ['Станица/Вријеме', 'C6H6', 'CO', 'H2S', 'NO', 'NO2', 'NOx', 'O3', 'PM10', 'PM25', 'SО2'] 
+            final_df.columns = [col[1] if isinstance(col, tuple) else col for col in final_df.columns.values]
+            final_df = final_df.rename(columns={0: 'Станица/Вријеме'}) 
             
-            print(f"Successfully pivoted {len(raw_df)} rows into {len(final_df)} wide rows.")
+            print(f"Successfully pivoted cleaned data into {len(final_df)} wide rows.")
             
         else:
             print("ERROR: Raw data table was found but was empty.")
