@@ -2,52 +2,73 @@ from playwright.sync_api import sync_playwright
 import pandas as pd
 import sys
 import json
+import time # Need to import the time module
 
 # Define the exact base API endpoint URL to intercept
-API_ENDPOINT_PATTERN = "EkoPodaci.json"
+API_ENDPOINT = "https://rhmzrs.com/data/feeds/EkoPodaci.json"
+
+# Global container for the data captured from the network response
+RAW_DATA_CONTAINER = []
+
+def handle_response(response):
+    """Callback function to check network responses for the data endpoint."""
+    global RAW_DATA_CONTAINER
+    
+    # Check if the response URL matches the known API endpoint
+    if API_ENDPOINT in response.url:
+        try:
+            # Read the JSON response body
+            data = response.json()
+            
+            # Assuming the JSON returns an object with a 'data' key containing the list of rows.
+            if isinstance(data, dict) and 'data' in data:
+                raw_rows = data['data']
+            elif isinstance(data, list):
+                raw_rows = data
+            else:
+                return # Not the expected structure
+
+            if len(raw_rows) >= 7: # We only care if it has the 7+ rows of data
+                RAW_DATA_CONTAINER.append(raw_rows)
+                print(f"Captured RAW JSON data from: {response.url}")
+                
+        except Exception as e:
+            # Print a debug message if JSON parsing fails for the correct endpoint
+            print(f"Failed to parse JSON from API endpoint: {e}")
+            pass
+
 
 def run():
     with sync_playwright() as p:
         browser = p.chromium.launch(headless=True)
         page = browser.new_page()
 
+        # 1. Attach the response handler
+        page.on("response", handle_response)
+        
         url = "https://rhmzrs.com/kontrola-kvaliteta-vazduha"
-        print(f"Going to {url} and waiting for the data feed...")
+        print(f"Going to {url} and monitoring network traffic for JSON data...")
         
-        # 1. Navigate to the page
+        # 2. Navigate and wait for AJAX calls to fire
         page.goto(url)
-        
-        # 2. Synchronously wait for the specific JSON response
-        try:
-            print(f"Waiting for response matching '{API_ENDPOINT_PATTERN}' (60s timeout)...")
-            
-            # This pauses execution until the response URL contains the required file name
-            response = page.wait_for_response(
-                lambda r: API_ENDPOINT_PATTERN in r.url,
-                timeout=60000
-            )
-            
-            # 3. Read the JSON body directly from the intercepted response
-            data = response.json()
-            
-        except Exception as e:
-            print(f"\n❌ FATAL ERROR: Data feed was not successfully intercepted. Timeout occurred: {e}")
-            browser.close()
-            sys.exit(1)
+
+        # 3. CRUCIAL FIX: Wait loop to ensure the asynchronous handler finishes
+        timeout_start = time.time()
+        print("Waiting for data capture (max 15 seconds)...")
+
+        # Wait until RAW_DATA_CONTAINER is populated or 15 seconds elapse
+        while not RAW_DATA_CONTAINER and time.time() < timeout_start + 15:
+            # wait_for_timeout is synchronous and ensures the main thread pauses
+            page.wait_for_timeout(500) 
         
         browser.close()
 
-        # Assuming the JSON returns an object with a 'data' key containing the list of rows
-        if isinstance(data, dict) and 'data' in data:
-            raw_rows = data['data']
-        elif isinstance(data, list):
-            raw_rows = data
-        else:
-            print("\n❌ FATAL ERROR: Intercepted data was not in the expected format (list or dict with 'data' key).")
-            print(f"Sample of unexpected data: {str(data)[:200]}...")
+        if not RAW_DATA_CONTAINER:
+            print("\n❌ FATAL ERROR: Data feed was not successfully intercepted within the timeout.")
             sys.exit(1)
 
         # 4. Process the captured data
+        raw_rows = RAW_DATA_CONTAINER[0]
         final_df = pd.DataFrame(raw_rows)
         print(f"\nSuccessfully loaded {len(final_df)} rows from JSON response.")
 
@@ -59,12 +80,10 @@ def run():
 
         # 5. Final Cleanup and Save
         if final_df.shape[1] >= len(final_column_names):
-            # Trim to the required 12 columns and rename
             final_df = final_df.iloc[:, :len(final_column_names)]
             final_df.columns = final_column_names
         else:
-            print(f"⚠️ WARNING: JSON data had {final_df.shape[1]} columns, expected 12.")
-            # If structure is wrong, save with generic names for inspection
+            print(f"⚠️ WARNING: JSON data had {final_df.shape[1]} columns, expected 12. Saving raw data.")
             final_df.columns = [f'Col_{i}' for i in range(final_df.shape[1])]
             
 
