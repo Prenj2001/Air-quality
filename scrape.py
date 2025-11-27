@@ -5,7 +5,6 @@ import sys
 def run():
     with sync_playwright() as p:
         print("Launching browser...")
-        # Ensure we are running headless for GitHub Actions
         browser = p.chromium.launch(headless=True)
         page = browser.new_page()
 
@@ -16,10 +15,8 @@ def run():
         # FIX: Increased timeout and wait for data rows
         try:
             print("Waiting for table data to load (45s timeout)...")
-            # Wait for a table cell (td) to appear in the table body (tbody)
             page.wait_for_selector("table tbody tr td", timeout=45000) 
         except Exception as e:
-            # This is the block that handles timeouts and exits with error code 1
             print(f"FATAL ERROR: Table data did not load within timeout. {e}")
             page.screenshot(path="debug_error.png")
             browser.close()
@@ -33,30 +30,34 @@ def run():
         try:
             # This extracts ALL tables from the page into a list
             dfs = pd.read_html(html)
-            print(f"Found {len(dfs)} tables on the page. PRINTING CONTENT TO LOG FOR INSPECTION.")
+            print(f"Found {len(dfs)} tables on the page.")
         except ValueError:
             print("No tables found in the HTML.")
             sys.exit(1)
 
-        # FINAL DEBUGGING STEP: Print the content of all found tables to the log
-        # This will show us the exact index of the correct table.
-        for i, df in enumerate(dfs):
-            print(f"\n--- DEBUG: Table {i} ---")
-            print(f"Dimensions: {len(df)} rows, {len(df.columns)} columns")
-            
-            if df.empty:
-                print("Content: EMPTY DATAFRAME")
-            elif len(df) == 1:
-                print("Content: Only HEADER ROW found.")
-                print(df.to_string())
-            else:
-                print("Content: Found potential data.")
-                # Use .to_string() to prevent data truncation in the log
-                print(df.head(10).to_string()) 
+        # FINAL FIX: Target the specific table index (0) as requested
+        TABLE_INDEX = 0 
         
-        # The script exits successfully here, so Git will find 'nothing to commit'
-        # but the vital debugging information will be in the log.
-        print("\n--- END OF SCRAPER RUN ---")
+        if len(dfs) > TABLE_INDEX:
+            target_df = dfs[TABLE_INDEX]
+            # Print the exact row count for clarity to prove if data is present
+            print(f"Targeted table index {TABLE_INDEX} with {len(target_df.columns)} columns. Found {len(target_df)} rows.")
+        else:
+            print(f"Error: Targeted index {TABLE_INDEX} not found in the {len(dfs)} tables.")
+            sys.exit(1)
+
+        # Save the result
+        if not target_df.empty and len(target_df) > 1:
+            # Clean up: Drop rows that are purely empty
+            target_df = target_df.dropna(how='all')
+            
+            output_file = "air_quality_data.csv"
+            target_df.to_csv(output_file, index=False, encoding='utf-8-sig') 
+            print(f"SUCCESS: Saved data ({len(target_df)} data rows) to {output_file}")
+            print(target_df.head())
+        else:
+            # If the log shows 0 rows, this message confirms the issue
+            print("ERROR: Target table (Table 0) was empty or contained only a header. The data must be in another table (e.g., Table 1).")
 
 
 if __name__ == "__main__":
