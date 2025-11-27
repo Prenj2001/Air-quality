@@ -35,13 +35,12 @@ def run():
             print("No tables found in the HTML.")
             sys.exit(1)
 
-        # FINAL FIX: Target the specific table index (0) as requested
-        TABLE_INDEX = 0 
+        # FINAL SOLUTION: Target index 1, which contains the data rows.
+        TABLE_INDEX = 1 
         
         if len(dfs) > TABLE_INDEX:
             target_df = dfs[TABLE_INDEX]
-            # Print the exact row count for clarity to prove if data is present
-            print(f"Targeted table index {TABLE_INDEX} with {len(target_df.columns)} columns. Found {len(target_df)} rows.")
+            print(f"Targeted table index {TABLE_INDEX}. Found {len(target_df)} rows.")
         else:
             print(f"Error: Targeted index {TABLE_INDEX} not found in the {len(dfs)} tables.")
             sys.exit(1)
@@ -56,8 +55,7 @@ def run():
             print(f"SUCCESS: Saved data ({len(target_df)} data rows) to {output_file}")
             print(target_df.head())
         else:
-            # If the log shows 0 rows, this message confirms the issue
-            print("ERROR: Target table (Table 0) was empty or contained only a header. The data must be in another table (e.g., Table 1).")
+            print("ERROR: Target table was empty or contained only a header. The data may have shifted indexes.")
 
 
 if __name__ == "__main__":
