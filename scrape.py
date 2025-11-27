@@ -32,6 +32,7 @@ def run():
             sys.exit(1)
 
         # --- FINAL SOLUTION: Dynamically search for the largest 3-column table ---
+        # This is the only way to reliably find the source data as its index shifts.
         max_rows = 0
         RAW_DATA_INDEX = -1
         
