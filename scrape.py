@@ -4,64 +4,52 @@ import sys
 import json
 
 # Define the exact base API endpoint URL to intercept
-API_ENDPOINT = "https://rhmzrs.com/data/feeds/EkoPodaci.json"
-
-# Global container for the data captured from the network response
-RAW_DATA_CONTAINER = []
-
-def handle_response(response):
-    """Callback function to check network responses for the data endpoint."""
-    global RAW_DATA_CONTAINER
-    
-    # Check if the response URL matches the known API endpoint
-    # We use 'in response.url' to handle the dynamic timestamps in the URL
-    if API_ENDPOINT in response.url:
-        try:
-            # Read the JSON response body
-            data = response.json()
-            
-            # The DataTables API typically returns an object with a 'data' key containing the list of rows.
-            # We assume the list of rows is either at the root or under the 'data' key.
-            if isinstance(data, dict) and 'data' in data:
-                raw_rows = data['data']
-            elif isinstance(data, list):
-                raw_rows = data
-            else:
-                return # Not the expected structure
-
-            if len(raw_rows) >= 7: # We only care if it has the 7+ rows of data
-                RAW_DATA_CONTAINER.append(raw_rows)
-                print(f"Captured RAW JSON data from: {response.url}")
-                
-        except Exception as e:
-            # Print a debug message if JSON parsing fails for the correct endpoint
-            print(f"Failed to parse JSON from API endpoint: {e}")
-            pass
-
+API_ENDPOINT_PATTERN = "EkoPodaci.json"
 
 def run():
     with sync_playwright() as p:
         browser = p.chromium.launch(headless=True)
         page = browser.new_page()
 
-        # 1. Attach the response handler
-        page.on("response", handle_response)
-        
         url = "https://rhmzrs.com/kontrola-kvaliteta-vazduha"
-        print(f"Going to {url} and monitoring network traffic for JSON data...")
+        print(f"Going to {url} and waiting for the data feed...")
         
-        # 2. Wait for the page to navigate and allow all AJAX calls to complete
+        # 1. Navigate to the page
         page.goto(url)
-        page.wait_for_timeout(10000) # Give 10 seconds for the AJAX data transfer to complete
+        
+        # 2. Synchronously wait for the specific JSON response
+        try:
+            print(f"Waiting for response matching '{API_ENDPOINT_PATTERN}' (60s timeout)...")
+            
+            # This pauses execution until the response URL contains the required file name
+            response = page.wait_for_response(
+                lambda r: API_ENDPOINT_PATTERN in r.url,
+                timeout=60000
+            )
+            
+            # 3. Read the JSON body directly from the intercepted response
+            data = response.json()
+            
+        except Exception as e:
+            print(f"\n❌ FATAL ERROR: Data feed was not successfully intercepted. Timeout occurred: {e}")
+            browser.close()
+            sys.exit(1)
         
         browser.close()
 
-        if not RAW_DATA_CONTAINER:
-            print("\n❌ FATAL ERROR: Data feed was not successfully intercepted. Check network conditions.")
+        # Assuming the JSON returns an object with a 'data' key containing the list of rows
+        if isinstance(data, dict) and 'data' in data:
+            raw_rows = data['data']
+        elif isinstance(data, list):
+            raw_rows = data
+        else:
+            print("\n❌ FATAL ERROR: Intercepted data was not in the expected format (list or dict with 'data' key).")
+            print(f"Sample of unexpected data: {str(data)[:200]}...")
             sys.exit(1)
 
-        # 3. Process the captured data (the first captured set is assumed correct)
-        raw_rows = RAW_DATA_CONTAINER[0]
+        # 4. Process the captured data
+        final_df = pd.DataFrame(raw_rows)
+        print(f"\nSuccessfully loaded {len(final_df)} rows from JSON response.")
 
         # Define the exact final column names (12 columns total)
         final_column_names = [
@@ -69,22 +57,17 @@ def run():
             'NO2', 'NOx', 'PM10', 'PM25', 'H2S', 'C6H6'
         ]
 
-        # Load the raw list of lists into a DataFrame
-        final_df = pd.DataFrame(raw_rows)
-        print(f"\nSuccessfully loaded {len(final_df)} rows from JSON response.")
-
-        # Ensure we have at least 12 columns and rename them according to the standard
+        # 5. Final Cleanup and Save
         if final_df.shape[1] >= len(final_column_names):
             # Trim to the required 12 columns and rename
             final_df = final_df.iloc[:, :len(final_column_names)]
             final_df.columns = final_column_names
         else:
-            print(f"ERROR: JSON data had {final_df.shape[1]} columns, expected 12. Saving raw data.")
-            # If structure is wrong, save the raw DF for inspection
+            print(f"⚠️ WARNING: JSON data had {final_df.shape[1]} columns, expected 12.")
+            # If structure is wrong, save with generic names for inspection
             final_df.columns = [f'Col_{i}' for i in range(final_df.shape[1])]
             
 
-        # 4. Final Save
         output_file = "air_quality_data.csv"
         final_df.to_csv(output_file, index=False, encoding='utf-8-sig') 
         print(f"✅ ULTIMATE SUCCESS: Saved {len(final_df)} rows of data to {output_file}")
