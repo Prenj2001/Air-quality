@@ -5,6 +5,7 @@ import sys
 def run():
     with sync_playwright() as p:
         print("Launching browser...")
+        # Ensure we are running headless for GitHub Actions
         browser = p.chromium.launch(headless=True)
         page = browser.new_page()
 
@@ -12,14 +13,15 @@ def run():
         print(f"Going to {url}...")
         page.goto(url)
 
-        # CRITICAL FIX 1: Increase timeout and wait for data rows
+        # FIX: Increased timeout and wait for data rows
         try:
             print("Waiting for table data to load (45s timeout)...")
+            # Wait for a table cell (td) to appear in the table body (tbody)
             page.wait_for_selector("table tbody tr td", timeout=45000) 
         except Exception as e:
-            # This is the block that triggers Exit Code 1 if a timeout occurs
+            # This is the block that handles timeouts and exits with error code 1
             print(f"FATAL ERROR: Table data did not load within timeout. {e}")
-            page.screenshot(path="debug_error.png") # Screenshot saved for manual check
+            page.screenshot(path="debug_error.png")
             browser.close()
             sys.exit(1)
 
@@ -31,17 +33,13 @@ def run():
         try:
             # This extracts ALL tables from the page into a list
             dfs = pd.read_html(html)
-            print(f"Found {len(dfs)} tables on the page. SAVING ALL FOR DEBUGGING.")
-        except ValueError:print("Parsing HTML with pandas...")
-        try:
-            # This extracts ALL tables from the page into a list
-            dfs = pd.read_html(html)
             print(f"Found {len(dfs)} tables on the page. PRINTING CONTENT TO LOG FOR INSPECTION.")
         except ValueError:
             print("No tables found in the HTML.")
             sys.exit(1)
 
-        # DEBUGGING: Print the content of all found tables to the log
+        # FINAL DEBUGGING STEP: Print the content of all found tables to the log
+        # This will show us the exact index of the correct table.
         for i, df in enumerate(dfs):
             print(f"\n--- DEBUG: Table {i} ---")
             print(f"Dimensions: {len(df)} rows, {len(df.columns)} columns")
@@ -50,21 +48,16 @@ def run():
                 print("Content: EMPTY DATAFRAME")
             elif len(df) == 1:
                 print("Content: Only HEADER ROW found.")
-                # Use to_string() to avoid truncation
                 print(df.to_string())
             else:
                 print("Content: Found potential data.")
-                print(df.head(10).to_string()) # Print up to 10 rows
+                # Use .to_string() to prevent data truncation in the log
+                print(df.head(10).to_string()) 
         
-        # We exit successfully here, ensuring the log is captured.
+        # The script exits successfully here, so Git will find 'nothing to commit'
+        # but the vital debugging information will be in the log.
         print("\n--- END OF SCRAPER RUN ---")
+
 
 if __name__ == "__main__":
     run()
-        
-        # --- Start of the final reporting block ---
-        if saved_count > 0:
-            print("---")
-            print(f"SUCCESS: Saved {saved_count} debug files. Please check your repository for the CSV containing the air quality data.")
-        else:
-            print("FAILURE: No non-empty tables were found for debugging.")
