@@ -35,27 +35,31 @@ def run():
             print("No tables found in the HTML.")
             sys.exit(1)
 
-        # FINAL SOLUTION: Target index 1, which contains the data rows.
-        TABLE_INDEX = 1 
+        # FINAL SOLUTION: Search dynamically for the table that matches the known structure (12 columns)
+        target_df = None
+        TARGET_COLUMNS = 12
         
-        if len(dfs) > TABLE_INDEX:
-            target_df = dfs[TABLE_INDEX]
-            print(f"Targeted table index {TABLE_INDEX}. Found {len(target_df)} rows.")
-        else:
-            print(f"Error: Targeted index {TABLE_INDEX} not found in the {len(dfs)} tables.")
-            sys.exit(1)
+        for i, df in enumerate(dfs):
+            # We look for 12 columns AND actual data rows (> 1 row total)
+            if len(df.columns) == TARGET_COLUMNS and len(df) > 1:
+                print(f"SUCCESS: Found data table at index {i}. It has {len(df)} rows.")
+                target_df = df
+                break
+            # Log skipped tables for debugging
+            print(f"Skipping table {i}: {len(df)} rows, {len(df.columns)} columns.")
 
         # Save the result
-        if not target_df.empty and len(target_df) > 1:
+        if target_df is not None and not target_df.empty and len(target_df) > 1:
             # Clean up: Drop rows that are purely empty
             target_df = target_df.dropna(how='all')
             
             output_file = "air_quality_data.csv"
             target_df.to_csv(output_file, index=False, encoding='utf-8-sig') 
-            print(f"SUCCESS: Saved data ({len(target_df)} data rows) to {output_file}")
+            print(f"✅ FINAL SUCCESS: Saved data ({len(target_df)} data rows) to {output_file}")
             print(target_df.head())
         else:
-            print("ERROR: Target table was empty or contained only a header. The data may have shifted indexes.")
+            print("FATAL ERROR: Could not find the correct 12-column table with data.")
+            sys.exit(1) # Fail the workflow if data is missing
 
 
 if __name__ == "__main__":
