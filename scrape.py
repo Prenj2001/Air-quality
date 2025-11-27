@@ -36,7 +36,7 @@ def run():
             sys.exit(1)
 
         # FINAL SOLUTION: Target the 3-column table (Index 2 - shifted position)
-        TABLE_INDEX = 2 
+        TABLE_INDEX = 1 
         
         if len(dfs) > TABLE_INDEX:
             raw_df = dfs[TABLE_INDEX]
