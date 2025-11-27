@@ -41,11 +41,14 @@ def run():
         # We look for the table that contains the 'PM10' column
         target_df = None
         for i, df in enumerate(dfs):
-            # Check if 'PM10' is in the columns (headers)
-            # We convert columns to string just in case they are multi-index
-            headers = [str(col) for col in df.columns]
-            if any("PM10" in h for h in headers):
-                print(f"Table {i} looks correct. It has {len(df)} rows.")
+           # Logic to find the CORRECT table
+        # We assume the main data table is the first one found that has more than 5 columns and more than 1 row.
+        target_df = None
+        for i, df in enumerate(dfs):
+            # Check for sufficient columns (e.g., Time, Station, O3, CO, etc., which is > 5)
+            # and ensure it has data rows (len(df) > 1)
+            if len(df.columns) > 5 and len(df) > 1:
+                print(f"Assuming table {i} is the target data table (has {len(df.columns)} columns).")
                 target_df = df
                 break
         
