@@ -31,25 +31,31 @@ def run():
             print("No tables found in the HTML.")
             sys.exit(1)
 
-        # FINAL TARGET: Table Index 5 (The 49-row raw data source)
-        TABLE_INDEX = 5
+        # --- FINAL SOLUTION: Dynamically search for the largest 3-column table ---
+        max_rows = 0
+        RAW_DATA_INDEX = -1
         
-        if len(dfs) <= TABLE_INDEX:
-            print(f"FATAL ERROR: Index {TABLE_INDEX} not found.")
+        for i, df in enumerate(dfs):
+            # Find the table that has 3 columns and the most rows (the 45+ row data source)
+            if len(df.columns) == 3 and len(df) > max_rows: 
+                max_rows = len(df)
+                RAW_DATA_INDEX = i
+        
+        if RAW_DATA_INDEX == -1 or max_rows < 45:
+            print("FATAL ERROR: Could not find the 3-column raw data table of expected size (45+ rows).")
             sys.exit(1)
 
-        raw_df = dfs[TABLE_INDEX]
-        print(f"Targeted raw data table at index {TABLE_INDEX}. Found {len(raw_df)} rows.")
+        raw_df = dfs[RAW_DATA_INDEX]
+        print(f"Targeted raw data table found at Index {RAW_DATA_INDEX}. Found {len(raw_df)} rows.")
 
         # Data Transformation (Pivot)
-        # We confirm it has the 3 columns and at least 45 rows (the known raw data size)
-        if len(raw_df.columns) == 3 and not raw_df.empty and len(raw_df) >= 45:
+        if not raw_df.empty:
             
             # 1. Use numeric indices (0, 1, 2) for columns
             raw_df.columns = [0, 1, 2] 
             raw_df = raw_df.dropna(subset=[0, 1])
             
-            # 2. Pivot the table: Group the 49 rows by Station (Col 0)
+            # 2. Pivot the table: Group the rows by Station (Col 0)
             final_df = raw_df.pivot_table(
                 index=[0],       # Column 0: Station/Time identifier (The final rows)
                 columns=[1],     # Column 1: Parameter Name (The final columns: PM10, O3, etc.)
@@ -61,10 +67,10 @@ def run():
             final_df.columns = [col[1] if isinstance(col, tuple) else col for col in final_df.columns.values]
             final_df = final_df.rename(columns={0: 'Станица/Вријеме'}) 
             
-            print(f"Successfully pivoted 49 rows into {len(final_df)} wide rows.")
+            print(f"Successfully pivoted {len(raw_df)} rows into {len(final_df)} wide rows.")
             
         else:
-            print(f"ERROR: Raw data table at index {TABLE_INDEX} was not the expected 3-column format or size.")
+            print("ERROR: Raw data table was found but was empty.")
             sys.exit(1)
 
         # Save the result
