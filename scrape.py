@@ -28,50 +28,67 @@ def run():
 
         print("Parsing HTML with pandas...")
         try:
-            # This extracts ALL tables from the page into a list
             dfs = pd.read_html(html)
             print(f"Found {len(dfs)} tables on the page.")
         except ValueError:
             print("No tables found in the HTML.")
             sys.exit(1)
 
-        # FINAL SOLUTION: Target the 3-column table (Index 2 - shifted position)
-        TABLE_INDEX = 1 
+        # Search for the 12-column table structure, which is the user's required output table
+        TABLE_INDEX = -1
+        TARGET_COLUMNS = 12
         
-        if len(dfs) > TABLE_INDEX:
-            raw_df = dfs[TABLE_INDEX]
-            print(f"Targeted raw data table at index {TABLE_INDEX}. Found {len(raw_df)} rows.")
-        else:
-            print(f"Error: Targeted index {TABLE_INDEX} not found in the {len(dfs)} tables.")
+        for i, df in enumerate(dfs):
+            if len(df.columns) == TARGET_COLUMNS:
+                TABLE_INDEX = i
+                print(f"Found 12-column structure at Index {TABLE_INDEX}.")
+                break
+        
+        if TABLE_INDEX == -1:
+            print("FATAL ERROR: Could not find any table with 12 columns.")
             sys.exit(1)
+
+        # --- PROCESS THE RAW DATA SOURCE INSTEAD ---
+        # Since the 12-column table is empty, we must find the table with the data (max rows).
+        max_rows = 0
+        RAW_DATA_INDEX = -1
+        
+        for i, df in enumerate(dfs):
+            # We look for the largest table that has at least 5 rows (to exclude headers/footers)
+            if len(df) > max_rows and len(df) > 5:
+                max_rows = len(df)
+                RAW_DATA_INDEX = i
+        
+        if RAW_DATA_INDEX == -1:
+            print("FATAL ERROR: Could not find any raw data table with more than 5 rows.")
+            sys.exit(1)
+
+        print(f"Using raw data source found at Index {RAW_DATA_INDEX} ({max_rows} rows).")
+        raw_df = dfs[RAW_DATA_INDEX]
 
         # Data Transformation (Robust Pivot using numeric indices)
         if len(raw_df.columns) == 3 and not raw_df.empty:
             
-            # Use numeric indices (0, 1, 2) for columns to avoid naming/encoding issues
+            # Use numeric indices (0, 1, 2) for columns
             raw_df.columns = [0, 1, 2] 
-            
-            # Drop any rows with missing values
             raw_df = raw_df.dropna(subset=[0, 1])
             
-            # Pivot the table: Use column 0 as rows, column 1 as headers, and column 2 as data
+            # Pivot the table: 
             final_df = raw_df.pivot_table(
-                index=[0],       # Column 0 is the unique identifier (Station/Time)
-                columns=[1],     # Column 1 is the Parameter Name (PM10, O3, etc.)
-                values=[2],      # Column 2 is the Value
+                index=[0],       
+                columns=[1],     
+                values=[2],      
                 aggfunc='first'
             ).reset_index()
             
-            # Fix MultiIndex resulting from pivot operation
+            # Fix MultiIndex and rename the identifier column
             final_df.columns = [col[1] if isinstance(col, tuple) else col for col in final_df.columns.values]
-            
-            # Final Step: Rename the primary identifier column (which is named '0')
             final_df = final_df.rename(columns={0: 'Станица/Вријеме'}) 
             
             print(f"Successfully pivoted data to {len(final_df)} wide rows.")
             
         else:
-            print("ERROR: Table 2 was not the expected 3-column raw data format or was empty.")
+            print(f"ERROR: Raw data table at index {RAW_DATA_INDEX} was not the expected 3-column format.")
             sys.exit(1)
 
         # Save the result
