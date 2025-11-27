@@ -35,8 +35,8 @@ def run():
             print("No tables found in the HTML.")
             sys.exit(1)
 
-        # Target the 3-column table (Index 3) for the raw data
-        TABLE_INDEX = 3
+        # FINAL SOLUTION: Target the 3-column table (Index 2 - shifted position)
+        TABLE_INDEX = 2 
         
         if len(dfs) > TABLE_INDEX:
             raw_df = dfs[TABLE_INDEX]
@@ -71,7 +71,7 @@ def run():
             print(f"Successfully pivoted data to {len(final_df)} wide rows.")
             
         else:
-            print("ERROR: Table 3 was not the expected 3-column raw data format.")
+            print("ERROR: Table 2 was not the expected 3-column raw data format or was empty.")
             sys.exit(1)
 
         # Save the result
